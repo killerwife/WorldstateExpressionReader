@@ -1,17 +1,25 @@
 ﻿// See https://aka.ms/new-console-template for more information
 using WorldstateExpressionReader;
+using WorldstateExpressionReader.Repositories;
 
-var expression = "0102F40700000301640000000602FA0700000302E1070000010241080000000601040000000000";
+bool cmangos = true;
 
-List<byte> byteArray = new List<byte>();
-for (int i = 0; i < expression.Length; i = i + 2)
+IDbContext context;
+if (cmangos)
+    context = new CmangosContext("server=localhost; database=tbcmangos; user=root; password=deadlydeath");
+else
+    context = new TCContext("server=localhost; database=tdb; user=root; password=deadlydeath");
+
+var expressions = await context.GetAllExpressions();
+
+foreach (var expression in expressions!)
 {
-    byte number = Convert.ToByte(expression.Substring(i, 2), 16);
-    byteArray.Add(number);
-}
-
-MemoryStream stream = new MemoryStream(byteArray.ToArray());
-using (BinaryReader reader = new BinaryReader(stream))
-{
-    ExpressionReader.ReadWorldstateExpression(reader);
+    var byteArray = ExpressionReader.HexToByte(expression.Expression);
+    Console.Write("Id: " + expression.Id + " ");
+    MemoryStream stream = new MemoryStream(byteArray.ToArray());
+    using (BinaryReader reader = new BinaryReader(stream))
+    {
+        await ExpressionReader.ReadWorldstateExpression(reader, context);
+    }
+    Console.WriteLine();
 }

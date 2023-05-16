@@ -53,13 +53,24 @@ namespace WorldstateExpressionReader
 
     public class ExpressionReader
     {
-        public static void ReadWorldstateExpression(BinaryReader reader)
+        public static List<byte> HexToByte(string expression)
+        {
+            List<byte> byteArray = new List<byte>();
+            for (int i = 0; i < expression.Length; i = i + 2)
+            {
+                byte number = Convert.ToByte(expression.Substring(i, 2), 16);
+                byteArray.Add(number);
+            }
+            return byteArray;
+        }
+
+        public static async Task ReadWorldstateExpression(BinaryReader reader, IDbContext context)
         {
             bool enabled = reader.ReadBoolean();
 
-            Console.Write("Expr: " + (enabled ? "enabled" : "disabled") + " ");
+            // Console.Write("Expr: " + (enabled ? "enabled" : "disabled") + " ");
 
-            ReadRelOp(reader);
+            await ReadRelOp(reader, context);
 
             while (reader.BaseStream.Position != reader.BaseStream.Length)
             {
@@ -71,14 +82,14 @@ namespace WorldstateExpressionReader
                     case 2: Console.Write("||" + " "); break;
                     case 3: Console.Write("!=" + " "); break;
                 }
-                ReadRelOp(reader);
+                await ReadRelOp(reader, context);
             }
         }
 
-        public static void ReadFunction(BinaryReader reader, UInt32 functionType)
+        public static async Task ReadFunction(BinaryReader reader, IDbContext context, UInt32 functionType)
         {
-            ReadSingleVal(reader);
-            ReadSingleVal(reader);
+            var arg1 = await ReadSingleVal(reader, context);
+            var arg2 = await ReadSingleVal(reader, context);
 
             switch ((WorldStateExpressionFunctions)functionType)
             {
@@ -104,7 +115,17 @@ namespace WorldstateExpressionReader
                 case WorldStateExpressionFunctions.WSE_FUNCTION_UNK19: break;
                 case WorldStateExpressionFunctions.WSE_FUNCTION_UNK20: break;
                 case WorldStateExpressionFunctions.WSE_FUNCTION_UNK21: break;
-                case WorldStateExpressionFunctions.WSE_FUNCTION_WORLD_STATE_EXPRESSION: Console.Write("Expression"); /*TODO: Need access to all of them for nesting*/ break;
+                case WorldStateExpressionFunctions.WSE_FUNCTION_WORLD_STATE_EXPRESSION:
+                    Console.Write("Expression");
+                    var recursiveExpression = await context.GetWorldstateExpression(arg1);
+                    var byteArray = HexToByte(recursiveExpression!);
+
+                    MemoryStream stream = new MemoryStream(byteArray.ToArray());
+                    using (BinaryReader recursiveReader = new BinaryReader(stream))
+                    {
+                        await ReadWorldstateExpression(recursiveReader, context);
+                    }
+                    break;
                 case WorldStateExpressionFunctions.WSE_FUNCTION_KEYSTONE_AFFIX: break;
                 case WorldStateExpressionFunctions.WSE_FUNCTION_UNK24: break;
                 case WorldStateExpressionFunctions.WSE_FUNCTION_UNK25: break;
@@ -124,7 +145,7 @@ namespace WorldstateExpressionReader
             }
         }
 
-        public static void ReadSingleVal(BinaryReader reader)
+        public static async Task<Int32> ReadSingleVal(BinaryReader reader, IDbContext context)
         {
             byte valueType = reader.ReadByte();
 
@@ -134,24 +155,27 @@ namespace WorldstateExpressionReader
                 case 1:
                     Int32 constant = reader.ReadInt32();
                     Console.Write(constant + " ");
-                    break;
+                    return constant;
                 case 2:
-                    UInt32 variableId = reader.ReadUInt32();
-                    Console.Write("WorldState(" + variableId + ") "); // TODO: Expand id to name
-                    break;
+                    Int32 variableId = reader.ReadInt32();
+                    string? variableName = await context.GetWorldstateName(variableId);
+                    Console.Write("WorldState(" + variableId + " "+ (variableName != null ? variableName : "") + ") "); // TODO: Expand id to name
+                    return variableId;
                 case 3:
                     UInt32 functionType = reader.ReadUInt32();
                     Console.Write("Function type: " + functionType + " ");
                     Console.Write("( ");
-                    ReadFunction(reader, functionType);
+                    await ReadFunction(reader, context, functionType);
                     Console.Write(") ");
                     break;
             }
+
+            return 0;
         }
 
-        public static void ReadVal(BinaryReader reader)
+        public static async Task ReadVal(BinaryReader reader, IDbContext context)
         {
-            ExpressionReader.ReadSingleVal(reader);
+            await ReadSingleVal(reader, context);
 
             byte operatorType = reader.ReadByte();
 
@@ -180,12 +204,12 @@ namespace WorldstateExpressionReader
             if (operatorType == 0)
                 return;
 
-            ExpressionReader.ReadSingleVal(reader);
+            await ReadSingleVal(reader, context);
         }
 
-        public static void ReadRelOp(BinaryReader reader)
+        public static async Task ReadRelOp(BinaryReader reader, IDbContext context)
         {
-            ReadVal(reader);
+            await ReadVal(reader, context);
 
             byte conditionOperation = reader.ReadByte();
 
@@ -200,7 +224,7 @@ namespace WorldstateExpressionReader
                 case 6: Console.Write(">=" + " "); break;
             }
 
-            ReadVal(reader);
+            await ReadVal(reader, context);
         }
     }
 }
