@@ -159,7 +159,7 @@ namespace WorldstateExpressionReader
                 case 2:
                     Int32 variableId = reader.ReadInt32();
                     string? variableName = await context.GetWorldstateName(variableId);
-                    Console.Write("WorldState(" + variableId + " "+ (variableName != null ? variableName : "") + ") "); // TODO: Expand id to name
+                    Console.Write("WorldState(" + variableId + (variableName != null ? (" " + variableName) : "") + ") "); // TODO: Expand id to name
                     return variableId;
                 case 3:
                     UInt32 functionType = reader.ReadUInt32();
